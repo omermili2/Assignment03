@@ -188,7 +188,7 @@ static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsig
 
     if (channel != -1) {
         /* set given channel's id according to ioctl parameter */
-        (file->private_data)->active_channel = (void*) ioctl_param;
+        slot->active_channel = ioctl_param;
     }
 
     /* return -1 if tried to set new channel and failed, 0 otherwise */
