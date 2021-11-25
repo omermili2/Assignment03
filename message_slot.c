@@ -70,6 +70,7 @@ channel* findChannel(struct msg_slot* slot, unsigned long channel_id) {
 
 /* create new channel and insert it as new head of channels' linked list in message slot */
 int newChannel(struct msg_slot* slot, unsigned long channel_id) {
+    int i;
     channel* new_channel;
 
     if ((findChannel(slot, channel_id)) == NULL) {  /* if channel does not exist */
@@ -79,7 +80,9 @@ int newChannel(struct msg_slot* slot, unsigned long channel_id) {
         }
         new_channel->id = channel_id;               /* set new channel's id */
         new_channel->msg_size = 0;                  /* initiate new channel's size */
-        new_channel->msg = NULL;
+        for (i = 0 ; i < BUF_LEN ; i++) {           /* initiate msg array to NULL */
+            (new_channel->msg)[i] = NULL;
+        }
         new_channel->next = slot->channels_head;    /* assign current head as new channel's next */
         slot->channels_head = new_channel;          /* assign new channel as slot's new head */
         slot->active_channel = new_channel->id;     /* set slot's active channel to new channel */
@@ -125,7 +128,7 @@ static ssize_t device_read(struct file* file, char __user* buffer, size_t length
     if (slot->active_channel == 0) { return -EINVAL; }
 
     /* reach slot's active channel by its id, and set pointer to message in channel */
-    channel = findChannel(slot->active_channel);
+    channel = findChannel(slot, slot->active_channel);
 
     /* check if message not exits or longer than buffer */
     if (channel->msg_size == 0) { return -EWOULDBLOCK; }
@@ -151,7 +154,7 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
     if (slot->active_channel == 0) { return -EINVAL; }
     if (length == 0 || length > BUF_LEN) { return -EMSGSIZE; }
 
-    channel = findChannel(slot->active_channel);
+    channel = findChannel(slot, slot->active_channel);
 
     /* perform write */
     printk("Invoking device_write(%p,%ld)\n", file, length);
@@ -159,17 +162,14 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
         if (get_user(channel->msg[i], &buffer[i]) != 0) { return -EFAULT; }
     }
 
-    /* update msg size according to result of writing and set channel's msg pointer back to beginning of msg */
-    channel->msg -= i;
+    /* update msg size according to result of writing */
     if (i != length) {
-        channel->msg_size = 0;
+        (channel->msg_size) = 0;
         return -EFAULT;     /* failed to write the whole msg, set msg size to 0 and return error */
     }
 
     (channel->msg_size) = i;
-
-    /* return the number of input characters used */
-    return i;
+    return i;               /* succeeded writing the whole msg, set msg size to i and return the number of input characters used */
 }
 
 //----------------------------------------------------------------
@@ -183,7 +183,7 @@ static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsig
     }
 
     /* create new channel or find an existing one with given channel id */
-    slot = (msg_slot*) file->private_data
+    slot = (msg_slot*) file->private_data;
     channel = newChannel(slot, ioctl_param);
 
     if (channel != -1) {
