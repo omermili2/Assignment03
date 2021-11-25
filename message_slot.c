@@ -33,7 +33,7 @@ typedef struct msg_slot {
 } msg_slot;
 
 
-static msg_slots* all_slots[256];
+static msg_slot* all_slots[256];
 static int slots_count = 0;
 
 //================== HELPER FUNCTIONS ===========================
@@ -43,7 +43,7 @@ int newSlot(struct file* file, unsigned int minor) {
     msg_slot* new_slot;
 
     if (all_slots[minor] == NULL) {
-        if(!(new_slot = (msg_slot *) kmalloc(sizeof(msg_slot), GFP_KERNEL)) {
+        if(!(new_slot = (msg_slot *) kmalloc(sizeof(msg_slot), GFP_KERNEL))) {
             return -ENOMEM;                     /* kmalloc failed */
         }
         all_slots[minor] = new_slot;            /* assign new slot to all slots array */
@@ -71,17 +71,16 @@ channel* findChannel(struct msg_slot* slot, unsigned long channel_id) {
 /* create new channel and insert it as new head of channels' linked list in message slot */
 int newChannel(struct msg_slot* slot, unsigned long channel_id) {
     channel* new_channel;
-    channel* head = slot->channels_head;
 
     if ((findChannel(slot, channel_id)) == NULL) {  /* if channel does not exist */
 
-        if(!(new_channel = (channel*) kmalloc(sizeof(channel), GFP_KERNEL)) {
+        if(!(new_channel = (channel*) kmalloc(sizeof(channel), GFP_KERNEL))) {
             return -ENOMEM;                         /* kmalloc failed */
         }
         new_channel->id = channel_id;               /* set new channel's id */
         new_channel->msg_size = 0;                  /* initiate new channel's size */
         new_channel->msg = NULL;
-        new_channel->next = head;                   /* assign current head as new channel's next */
+        new_channel->next = slot->channels_head;    /* assign current head as new channel's next */
         slot->channels_head = new_channel;          /* assign new channel as slot's new head */
         slot->active_channel = new_channel->id;     /* set slot's active channel to new channel */
     }
@@ -102,10 +101,10 @@ void freeSlotChannels(struct msg_slot* slot) {
 //================== DEVICE FUNCTIONS ===========================
 static int device_open(struct inode* inode, struct file* file) {
 
-    unsigned int minor_num = iminor(inode); /* get file's minor number */
-    int new_slot = newSlot(file, minor_num);      /* create new message slot */
+    unsigned int minor_num = iminor(inode);         /* get file's minor number */
+    int new_slot = newSlot(file, minor_num);        /* create new message slot */
     printk("Invoking device_open(%p)\n", file);
-    return slot;
+    return new_slot;
 }
 
 //---------------------------------------------------------------
@@ -119,7 +118,7 @@ static int device_release(struct inode* inode, struct file* file) {
 // the device file attempts to read from it
 static ssize_t device_read(struct file* file, char __user* buffer, size_t length, loff_t* offset) {
     channel* channel;
-    msg_slot* slot = ((msg_slot *)file->private_data;
+    msg_slot* slot = (msg_slot *) file->private_data;
 
     /* check if call is invalid (buffer or slot non-exist, no channel has been set on file descriptor) */
     if (buffer == NULL || slot == NULL) { return -EINVAL; }
@@ -136,7 +135,7 @@ static ssize_t device_read(struct file* file, char __user* buffer, size_t length
     printk("Invoking device_read(%p,%ld), file, length");
     if (put_user(channel->msg, buffer) != 0) { return -EFAULT; }
 
-    return channel->msg_size;
+    return (channel->msg_size);
 }
 
 //---------------------------------------------------------------
@@ -144,7 +143,7 @@ static ssize_t device_read(struct file* file, char __user* buffer, size_t length
 static ssize_t device_write(struct file* file, const char __user* buffer, size_t length, loff_t* offset) {
     int i;
     channel* channel;
-    msg_slot* slot = ((msg_slot *)file->private_data;
+    msg_slot* slot = (msg_slot *)file->private_data;
 
     /* check if call is invalid (buffer or slot non-exist, no channel has been set on file descriptor,
      * message non-exist or too long) */
@@ -166,7 +165,8 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
         channel->msg_size = 0;
         return -EFAULT;     /* failed to write the whole msg, set msg size to 0 and return error */
     }
-    channel->msg_size = i;
+
+    (channel->msg_size) = i;
 
     /* return the number of input characters used */
     return i;
@@ -175,20 +175,20 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
 //----------------------------------------------------------------
 static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsigned long ioctl_param) {
     int channel;
-    unsigned int minor_num;
     msg_slot* slot;
 
     /* check if ioctl call is valid */
     if (ioctl_command_id != MSG_SLOT_CHANNEL || ioctl_param == 0) {
-        return -EINVAL
+        return -EINVAL;
     }
 
     /* create new channel or find an existing one with given channel id */
-    channel = newChannel((msg_slot*)file->private_data, ioctl_param);
+    slot = (msg_slot*) file->private_data
+    channel = newChannel(slot, ioctl_param);
 
     if (channel != -1) {
         /* set given channel's id according to ioctl parameter */
-        file->private_data->active_channel = (void*) ioctl_param;
+        (file->private_data)->active_channel = (void*) ioctl_param;
     }
 
     /* return -1 if tried to set new channel and failed, 0 otherwise */
@@ -213,9 +213,6 @@ struct file_operations Fops = {
 static int __init simple_init(void) {
     int rc = -1;
 
-    memset(&device_info, 0, sizeof(struct chardev_info));
-    spin_lock_init(&device_info.lock);
-
     // Register driver capabilities. Obtain major num
     rc = register_chrdev(MAJOR_NUM, DEVICE_RANGE_NAME, &Fops);
 
@@ -232,8 +229,9 @@ static int __init simple_init(void) {
 static void __exit simple_cleanup(void) {
     // Unregister the device
     // Should always succeed
+    int i;
 
-    for (int i = 0; i < slots_count; i++){
+    for (i = 0; i < slots_count; i++) {
         if (all_slots[i]) {
             freeSlotChannels(all_slots[i]); /* free all channels in slot */
             kfree(all_slots[i]);            /* free slot itself */
